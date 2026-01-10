@@ -1,10 +1,12 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Safely access process.env to avoid ReferenceError in browser environments that don't polyfill it globally
+const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+const ai = new GoogleGenAI({ apiKey: apiKey || '' });
 
 export const generatePlanSuggestion = async (input: string) => {
-  if (!process.env.API_KEY) return null;
+  if (!apiKey) return null;
 
   try {
     const response = await ai.models.generateContent({
