@@ -26,6 +26,14 @@ const getClusterSize = (item: BoardItem, assignedIdeas: BoardItem[]) => {
     return { w, h };
 };
 
+// Title Box Definition (approximate area of the title input)
+const getTitleBox = (boardWidth: number) => ({
+    x: boardWidth / 2 - 600, // Centered, 1200px wide
+    y: 150,                  // Top area
+    w: 1200,
+    h: 300                   // Clear area for title
+});
+
 // --- Assignment Logic ---
 
 const getIdeaAssignments = (items: BoardItem[]) => {
@@ -167,7 +175,9 @@ export const layoutMessy = (items: BoardItem[], w: number, h: number) => {
   const mainItems = items.filter(i => i.type !== ComponentType.IDEA);
   const ideas = items.filter(i => i.type === ComponentType.IDEA);
   const assignments = getIdeaAssignments(items);
-  const placedBoxes: { x: number, y: number, w: number, h: number }[] = [];
+  
+  // Initialize with Title Box to avoid collision
+  const placedBoxes: { x: number, y: number, w: number, h: number }[] = [getTitleBox(w)];
 
   const padding = 200;
   
@@ -192,7 +202,10 @@ export const layoutOrganized = (items: BoardItem[], w: number, h: number) => {
     // Dynamic Grid
     const startX = 200;
     let currentX = startX;
-    let currentY = 300;
+    
+    // Start lower to avoid Title overlap (Title is approx at y=200, height 150-200)
+    let currentY = 500; 
+    
     let rowMaxH = 0;
     const gapX = 50;
     const gapY = 100;
@@ -274,7 +287,9 @@ export const layoutStructured = (items: BoardItem[], w: number, h: number) => {
         }
     });
 
-    let currentY = 250;
+    // Start lower to avoid Title overlap
+    let currentY = 500;
+    
     const gapX = 80;
     const gapY = 150;
     let placedMain = [...mainItems];
@@ -319,7 +334,9 @@ export const layoutDiamond = (items: BoardItem[], w: number, h: number) => {
     const mainItems = items.filter(i => i.type !== ComponentType.IDEA);
     const ideas = items.filter(i => i.type === ComponentType.IDEA);
     const assignments = getIdeaAssignments(items);
-    const placedBoxes: { x: number, y: number, w: number, h: number }[] = [];
+    
+    // Initialize with Title Box
+    const placedBoxes: { x: number, y: number, w: number, h: number }[] = [getTitleBox(w)];
 
     if (mainItems.length === 0) return attachIdeasToParents(items);
 
@@ -372,7 +389,9 @@ export const layoutCornered = (items: BoardItem[], w: number, h: number) => {
     const mainItems = items.filter(i => i.type !== ComponentType.IDEA);
     const ideas = items.filter(i => i.type === ComponentType.IDEA);
     const assignments = getIdeaAssignments(items);
-    const placedBoxes: { x: number, y: number, w: number, h: number }[] = [];
+    
+    // Initialize with Title Box
+    const placedBoxes: { x: number, y: number, w: number, h: number }[] = [getTitleBox(w)];
 
     if (mainItems.length === 0) return attachIdeasToParents(items);
 
