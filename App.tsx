@@ -775,6 +775,7 @@ const App: React.FC = () => {
             transformStyle: graphicsQuality === 'LOW' ? 'flat' : 'preserve-3d',
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
             cursor: isStringMode ? 'crosshair' : (isPanning ? 'grabbing' : 'grab'),
+            // Disregard box shadows on LOW
             boxShadow: graphicsQuality === 'LOW' ? 'none' : '0 50px 100px -20px rgba(0,0,0,0.8), inset 0 0 100px rgba(0,0,0,0.5)', 
             transformOrigin: '50% 50%' 
           }}
@@ -812,17 +813,16 @@ const App: React.FC = () => {
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.4)_100%)] pointer-events-none z-0"></div>
           )}
 
-          {/* Texture Overlay - Low Quality simple color or no texture */}
-          {graphicsQuality !== 'LOW' && (
-             <div 
-                className="absolute inset-0 opacity-70 pointer-events-none" 
-                style={{ 
-                  backgroundImage: theme.texture,
-                  backgroundSize: theme.textureSize || 'auto',
-                  mixBlendMode: 'multiply'
-                }}
-              />
-          )}
+          {/* Texture Overlay - Visible on all qualities now to add detail, but optimized for Low */}
+          <div 
+             className={`absolute inset-0 pointer-events-none ${graphicsQuality === 'LOW' ? 'opacity-20' : 'opacity-70'}`} 
+             style={{ 
+               backgroundImage: theme.texture,
+               backgroundSize: theme.textureSize || 'auto',
+               // On Low, use normal blend mode to be faster, while still adding texture detail
+               mixBlendMode: graphicsQuality === 'LOW' ? 'normal' : 'multiply'
+             }}
+           />
 
           {graphicsQuality !== 'LOW' && (
               <div className="absolute -inset-[1px] shadow-[inset_0_2px_15px_rgba(0,0,0,0.8),inset_0_-2px_15px_rgba(255,255,255,0.05)] pointer-events-none"></div>
