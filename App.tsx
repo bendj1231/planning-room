@@ -5,7 +5,7 @@ import { BoardItem } from './components/BoardItem';
 import { ConnectionLines } from './components/ConnectionLines';
 import { BoardType, ComponentType, BoardItem as IBoardItem, Point, ConnectionType } from './types';
 import { BOARD_THEMES, INITIAL_ITEMS, ITEM_DIMENSIONS } from './constants';
-import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer } from 'lucide-react';
+import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer, FilePlus, Eraser } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<IBoardItem[]>(INITIAL_ITEMS);
@@ -110,6 +110,25 @@ const App: React.FC = () => {
   };
 
   // --- File Operations ---
+
+  const handleNewBoard = () => {
+    if (items.length > 0 && !window.confirm("Start a new project? Unsaved progress will be lost.")) {
+      return;
+    }
+    setItems([]);
+    setProjectTitle("UNTITLED PROJECT");
+    setBoardType(BoardType.CARDBOARD);
+    setActiveStringType(ConnectionType.DEFAULT);
+    setIsStringMode(false);
+    resetView();
+  };
+
+  const handleClearBoard = () => {
+    if (items.length === 0) return;
+    if (window.confirm("Clear all items from the board? This cannot be undone.")) {
+      setItems([]);
+    }
+  };
 
   const handleSaveBoard = () => {
     const payload = {
@@ -722,20 +741,36 @@ const App: React.FC = () => {
 
         {/* Project Files */}
         <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-col space-y-2 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
+           {/* Top Row: New & Clear */}
+           <div className="flex flex-row space-x-2">
+             <button onClick={handleNewBoard} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="New Board">
+                <FilePlus size={16} className="text-zinc-400 group-hover:text-emerald-400" />
+                <span className="text-xs font-medium text-zinc-400 group-hover:text-white">New</span>
+             </button>
+             <button onClick={handleClearBoard} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Clear All Items">
+                <Eraser size={16} className="text-zinc-400 group-hover:text-red-400" />
+                <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Clear</span>
+             </button>
+           </div>
+           
+           <div className="h-px bg-white/5 my-1"></div>
+
+           {/* Middle Row: Save & Load */}
            <div className="flex flex-row space-x-2">
              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
              <button onClick={handleSaveBoard} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Save Board">
-                <Download size={16} className="text-zinc-400 group-hover:text-white" />
+                <Download size={16} className="text-zinc-400 group-hover:text-blue-400" />
                 <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Save</span>
              </button>
              <button onClick={handleLoadBoardClick} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Load Board">
-                <Upload size={16} className="text-zinc-400 group-hover:text-white" />
+                <Upload size={16} className="text-zinc-400 group-hover:text-amber-400" />
                 <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Load</span>
              </button>
            </div>
+           
            {/* Print PDF Button */}
            <button onClick={handlePrint} className="w-full py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Print as PDF">
-              <Printer size={16} className="text-zinc-400 group-hover:text-white" />
+              <Printer size={16} className="text-zinc-400 group-hover:text-purple-400" />
               <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Print / PDF</span>
            </button>
         </div>
