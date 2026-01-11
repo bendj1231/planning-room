@@ -5,7 +5,7 @@ import { BoardItem } from './components/BoardItem';
 import { ConnectionLines } from './components/ConnectionLines';
 import { BoardType, ComponentType, BoardItem as IBoardItem, Point, ConnectionType } from './types';
 import { BOARD_THEMES, INITIAL_ITEMS, ITEM_DIMENSIONS } from './constants';
-import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload } from 'lucide-react';
+import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<IBoardItem[]>(INITIAL_ITEMS);
@@ -21,6 +21,9 @@ const App: React.FC = () => {
 
   // Focus Mode State
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
+
+  // UI Visibility State
+  const [showUI, setShowUI] = useState(true);
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, sourceId: string, targetId: string } | null>(null);
@@ -131,6 +134,10 @@ const App: React.FC = () => {
 
   const handleLoadBoardClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -517,6 +524,9 @@ const App: React.FC = () => {
     }
   };
 
+  // Determine if main UI is visible (Tools + Zoom)
+  const isUIVisible = showUI && !focusedItemId;
+
   return (
     <div className="relative w-full h-screen overflow-hidden">
       <RoomEnvironment>
@@ -616,7 +626,7 @@ const App: React.FC = () => {
       {/* Connection Context Menu */}
       {contextMenu && (
         <div 
-          className="fixed z-[100] bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl flex flex-col gap-1 min-w-[140px]"
+          className="fixed z-[100] bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl flex flex-col gap-1 min-w-[140px] no-print"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -641,8 +651,17 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Top Left: Creation Controls (Hidden/Blurred in Focus Mode) */}
-      <div className={`absolute left-10 top-10 flex flex-col space-y-4 z-50 transition-all duration-300 ${focusedItemId ? 'opacity-0 pointer-events-none -translate-y-4' : 'opacity-100 translate-y-0'}`}>
+      {/* Persistent Toggle UI Button (Outside regular hide logic) */}
+      <button 
+         onClick={() => setShowUI(!showUI)} 
+         className="absolute top-4 left-4 z-[70] p-2 bg-zinc-800/80 hover:bg-zinc-700 text-white/50 hover:text-white rounded-lg transition-all no-print"
+         title={showUI ? "Hide Interface" : "Show Interface"}
+      >
+         {showUI ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+
+      {/* Top Left: Creation Controls (Hidden/Blurred in Focus Mode or if UI hidden) */}
+      <div className={`absolute left-10 top-10 flex flex-col space-y-4 z-50 transition-all duration-300 no-print ${isUIVisible ? 'opacity-100 translate-y-0' : 'opacity-0 pointer-events-none -translate-y-4'}`}>
         <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-col space-y-3 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
           <button onClick={() => addItem(ComponentType.OBJECTIVE)} className="p-3 bg-white/5 hover:bg-white/15 rounded-xl text-white transition-all flex items-center space-x-3 group w-full text-left">
             <Plus size={20} className="text-emerald-400 shrink-0" />
@@ -702,21 +721,28 @@ const App: React.FC = () => {
         </div>
 
         {/* Project Files */}
-        <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-row space-x-2 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
-           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
-           <button onClick={handleSaveBoard} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Save Board">
-              <Download size={16} className="text-zinc-400 group-hover:text-white" />
-              <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Save</span>
-           </button>
-           <button onClick={handleLoadBoardClick} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Load Board">
-              <Upload size={16} className="text-zinc-400 group-hover:text-white" />
-              <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Load</span>
+        <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-col space-y-2 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
+           <div className="flex flex-row space-x-2">
+             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
+             <button onClick={handleSaveBoard} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Save Board">
+                <Download size={16} className="text-zinc-400 group-hover:text-white" />
+                <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Save</span>
+             </button>
+             <button onClick={handleLoadBoardClick} className="flex-1 py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Load Board">
+                <Upload size={16} className="text-zinc-400 group-hover:text-white" />
+                <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Load</span>
+             </button>
+           </div>
+           {/* Print PDF Button */}
+           <button onClick={handlePrint} className="w-full py-2 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center gap-2 group" title="Print as PDF">
+              <Printer size={16} className="text-zinc-400 group-hover:text-white" />
+              <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Print / PDF</span>
            </button>
         </div>
       </div>
 
       {/* Bottom Right: Zoom Controls */}
-      <div className={`absolute right-10 bottom-10 flex flex-col space-y-3 z-50 transition-all duration-300 ${focusedItemId ? 'opacity-0 pointer-events-none translate-y-4' : 'opacity-100 translate-y-0'}`}>
+      <div className={`absolute right-10 bottom-10 flex flex-col space-y-3 z-50 transition-all duration-300 no-print ${isUIVisible ? 'opacity-100 translate-y-0' : 'opacity-0 pointer-events-none translate-y-4'}`}>
         <div className="bg-zinc-900/95 backdrop-blur-xl p-2 rounded-full flex flex-col items-center space-y-2 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
            <button onClick={() => handleZoom(0.1)} className="p-3 bg-white/5 hover:bg-white/20 rounded-full text-white transition-all active:scale-95" title="Zoom In">
              <ZoomIn size={20} />
@@ -732,7 +758,7 @@ const App: React.FC = () => {
       </div>
       
       {/* Help Text */}
-      <div className={`absolute top-6 left-1/2 -translate-x-1/2 text-white/30 text-[10px] uppercase tracking-[0.2em] font-mono pointer-events-none select-none transition-opacity duration-300 ${focusedItemId ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`absolute top-6 left-1/2 -translate-x-1/2 text-white/30 text-[10px] uppercase tracking-[0.2em] font-mono pointer-events-none select-none transition-opacity duration-300 no-print ${isUIVisible ? 'opacity-100' : 'opacity-0'}`}>
            Drag background to pan • Wheel to zoom • Select string color to connect
       </div>
     </div>
