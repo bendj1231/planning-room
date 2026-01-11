@@ -20,6 +20,8 @@ export enum ConnectionType {
   ALTERNATIVE = 'ALTERNATIVE'
 }
 
+export type GraphicsQuality = 'HIGH' | 'MEDIUM' | 'LOW';
+
 export interface Connection {
   id: string;
   targetId: string;
@@ -36,6 +38,7 @@ export interface BoardItem {
   rotation: number;
   color?: string;
   connections: Connection[]; // Array of connection objects
+  dragChildren?: boolean;
 }
 
 export interface Point {

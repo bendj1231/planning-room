@@ -1,11 +1,12 @@
 
 import React, { useState } from 'react';
-import { BoardItem, Point, ConnectionType, ComponentType } from '../types';
+import { BoardItem, Point, ConnectionType, ComponentType, GraphicsQuality } from '../types';
 
 interface ConnectionLinesProps {
   items: BoardItem[];
   activeConnection: { fromId: string; current: Point; type: ConnectionType } | null;
   onConnectionContextMenu?: (e: React.MouseEvent, sourceId: string, targetId: string) => void;
+  quality: GraphicsQuality;
 }
 
 const COLORS = {
@@ -31,23 +32,29 @@ const getItemCenter = (item: BoardItem) => {
   }
 };
 
-export const ConnectionLines: React.FC<ConnectionLinesProps> = ({ items, activeConnection, onConnectionContextMenu }) => {
+export const ConnectionLines: React.FC<ConnectionLinesProps> = ({ items, activeConnection, onConnectionContextMenu, quality }) => {
   const [hoveredConnId, setHoveredConnId] = useState<string | null>(null);
+
+  const isLow = quality === 'LOW';
+  // Disable filter on Low quality
+  const filterUrl = isLow ? undefined : "url(#line-shadow)";
 
   return (
     <svg className="absolute inset-0 pointer-events-none w-full h-full overflow-visible z-0">
       <defs>
-        <filter id="line-shadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
-          <feOffset dx="2" dy="3" result="offsetblur" />
-          <feComponentTransfer>
-            <feFuncA type="linear" slope="0.3" />
-          </feComponentTransfer>
-          <feMerge>
-            <feMergeNode />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
+        {!isLow && (
+          <filter id="line-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+            <feOffset dx="2" dy="3" result="offsetblur" />
+            <feComponentTransfer>
+              <feFuncA type="linear" slope="0.3" />
+            </feComponentTransfer>
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        )}
         
         {/* Markers for each connection type */}
         <marker id="arrowhead-default" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -61,11 +68,6 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({ items, activeC
         </marker>
         <marker id="arrowhead-alternative" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
           <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6" />
-        </marker>
-
-        {/* Big Arrow Marker for Hover Effect */}
-        <marker id="arrowhead-hover" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto">
-            <polygon points="0 0, 14 5, 0 10" fill="white" stroke="black" strokeWidth="1" />
         </marker>
       </defs>
       
@@ -133,7 +135,7 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({ items, activeC
                 strokeWidth={isHovered ? 4 : 3}
                 strokeDasharray={conn.type === ConnectionType.DEFAULT ? "8 4" : "none"}
                 markerEnd={`url(#${style.marker})`}
-                filter="url(#line-shadow)"
+                filter={filterUrl}
                 className="pointer-events-none transition-all duration-200"
               />
 
@@ -198,7 +200,7 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({ items, activeC
             strokeWidth="3"
             strokeDasharray="4 4"
             markerEnd={`url(#${style.marker})`}
-            filter="url(#line-shadow)"
+            filter={filterUrl}
             className="opacity-70"
           />
         );

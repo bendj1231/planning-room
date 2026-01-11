@@ -3,10 +3,36 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { RoomEnvironment } from './components/RoomEnvironment';
 import { BoardItem } from './components/BoardItem';
 import { ConnectionLines } from './components/ConnectionLines';
-import { BoardType, ComponentType, BoardItem as IBoardItem, Point, ConnectionType } from './types';
+import { BoardType, ComponentType, BoardItem as IBoardItem, Point, ConnectionType, GraphicsQuality } from './types';
 import { BOARD_THEMES, INITIAL_ITEMS, ITEM_DIMENSIONS } from './constants';
-import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer, FilePlus, Eraser, Grid, Shuffle, Network, Diamond, LayoutTemplate, Clipboard, X, Image as ImageIcon, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer, FilePlus, Eraser, Grid, Shuffle, Network, Diamond, LayoutTemplate, Clipboard, X, Image as ImageIcon, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Settings as SettingsIcon } from 'lucide-react';
 import { layoutMessy, layoutOrganized, layoutStructured, layoutDiamond, layoutCornered } from './utils/layouts';
+
+// Helper to find connected Idea strips (recursive)
+const getConnectedIdeaIds = (rootId: string, items: IBoardItem[]) => {
+    const connectedIds = new Set<string>();
+    const queue = [rootId];
+    const visited = new Set<string>([rootId]);
+
+    while (queue.length > 0) {
+        const currentId = queue.shift()!;
+        const currentItem = items.find(i => i.id === currentId);
+        if (!currentItem) continue;
+
+        currentItem.connections.forEach(conn => {
+            if (!visited.has(conn.targetId)) {
+                const targetItem = items.find(i => i.id === conn.targetId);
+                // Only include IDEAs in the drag group
+                if (targetItem && targetItem.type === ComponentType.IDEA) {
+                    visited.add(conn.targetId);
+                    connectedIds.add(conn.targetId);
+                    queue.push(conn.targetId);
+                }
+            }
+        });
+    }
+    return connectedIds;
+};
 
 const App: React.FC = () => {
   const [items, setItems] = useState<IBoardItem[]>(INITIAL_ITEMS);
@@ -14,6 +40,10 @@ const App: React.FC = () => {
   const [activeStringType, setActiveStringType] = useState<ConnectionType>(ConnectionType.DEFAULT);
   const [projectTitle, setProjectTitle] = useState("Operation: Skyline");
   
+  // Graphics Quality State
+  const [graphicsQuality, setGraphicsQuality] = useState<GraphicsQuality>('HIGH');
+  const [showSettings, setShowSettings] = useState(false);
+
   // Board Dimensions State - Fixed Large Landscape Map
   const [boardSize] = useState({ width: 3400, height: 2200 });
 
@@ -59,10 +89,13 @@ const App: React.FC = () => {
 
   // Close context menu on global click
   useEffect(() => {
-    const handleClickOutside = () => setContextMenu(null);
+    const handleClickOutside = () => {
+         setContextMenu(null);
+         if (showSettings) setShowSettings(false);
+    };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
-  }, []);
+  }, [showSettings]);
 
   // Keyboard Delete Listener
   useEffect(() => {
@@ -85,7 +118,31 @@ const App: React.FC = () => {
   }, [activeStringType]);
 
   const handleUpdateItem = useCallback((id: string, updates: Partial<IBoardItem>) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    setItems(prev => {
+        const currentItem = prev.find(i => i.id === id);
+        if (!currentItem) return prev;
+        
+        // Handle Recursive Drag Logic
+        // If the item has dragChildren enabled and is being moved (x or y changed)
+        if (currentItem.dragChildren && (updates.x !== undefined || updates.y !== undefined)) {
+             const dx = (updates.x !== undefined ? updates.x : currentItem.x) - currentItem.x;
+             const dy = (updates.y !== undefined ? updates.y : currentItem.y) - currentItem.y;
+             
+             if (dx !== 0 || dy !== 0) {
+                 // Find all connected IDEA items
+                 const childrenIds = getConnectedIdeaIds(id, prev);
+                 return prev.map(item => {
+                     if (item.id === id) return { ...item, ...updates };
+                     if (childrenIds.has(item.id)) {
+                         return { ...item, x: item.x + dx, y: item.y + dy };
+                     }
+                     return item;
+                 });
+             }
+        }
+
+        return prev.map(item => item.id === id ? { ...item, ...updates } : item);
+    });
   }, []);
 
   // --- Focus Mode Logic (Zoom In/Out) ---
@@ -228,6 +285,13 @@ const App: React.FC = () => {
       if (contextMenu.type === 'ITEM') {
           handleDeleteItem(contextMenu.itemId);
       }
+      setContextMenu(null);
+  };
+  
+  const toggleDragChildren = (id: string) => {
+      setItems(prev => prev.map(item => 
+          item.id === id ? { ...item, dragChildren: !item.dragChildren } : item
+      ));
       setContextMenu(null);
   };
 
@@ -693,9 +757,12 @@ const App: React.FC = () => {
   // Determine if main UI is visible (Tools + Zoom)
   const isUIVisible = showUI && !focusedItemId;
 
+  // Render variables for Context Menu
+  const contextItem = contextMenu?.type === 'ITEM' ? items.find(i => i.id === contextMenu.itemId) : null;
+
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      <RoomEnvironment>
+      <RoomEnvironment quality={graphicsQuality}>
         <div 
           ref={boardRef}
           onMouseDown={startPan}
@@ -705,27 +772,29 @@ const App: React.FC = () => {
           style={{
             width: boardSize.width,
             height: boardSize.height,
-            transformStyle: 'preserve-3d',
+            transformStyle: graphicsQuality === 'LOW' ? 'flat' : 'preserve-3d',
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
             cursor: isStringMode ? 'crosshair' : (isPanning ? 'grabbing' : 'grab'),
-            boxShadow: '0 50px 100px -20px rgba(0,0,0,0.8), inset 0 0 100px rgba(0,0,0,0.5)', 
+            boxShadow: graphicsQuality === 'LOW' ? 'none' : '0 50px 100px -20px rgba(0,0,0,0.8), inset 0 0 100px rgba(0,0,0,0.5)', 
             transformOrigin: '50% 50%' 
           }}
         >
           {/* Hanging Lamp - BIGGER & BRIGHTER & CENTERED */}
-          <div className="absolute -top-[350px] left-1/2 -translate-x-1/2 z-[60] pointer-events-none preserve-3d flex flex-col items-center">
-            {/* Cord */}
-            <div className="w-1 h-80 bg-black shadow-xl"></div>
-            {/* Shade */}
-            <div className="w-[450px] h-40 bg-zinc-950 rounded-t-[225px] shadow-[0_10px_30px_rgba(0,0,0,1)] relative z-20">
-               {/* Rim Highlight */}
-               <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800/50"></div>
-               {/* Inner glow/bulb */}
-               <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-60 h-20 bg-yellow-50 rounded-full blur-[20px] opacity-80"></div>
-            </div>
-            {/* Light Cone / Spotlight Effect on Board */}
-             <div className="absolute top-[320px] left-1/2 -translate-x-1/2 w-[2800px] h-[2800px] bg-[radial-gradient(circle,rgba(255,250,230,0.15)_0%,rgba(0,0,0,0)_60%)] pointer-events-none mix-blend-overlay blur-3xl z-10"></div>
-          </div>
+          {graphicsQuality !== 'LOW' && (
+              <div className="absolute -top-[350px] left-1/2 -translate-x-1/2 z-[60] pointer-events-none preserve-3d flex flex-col items-center">
+                {/* Cord */}
+                <div className="w-1 h-80 bg-black shadow-xl"></div>
+                {/* Shade */}
+                <div className="w-[450px] h-40 bg-zinc-950 rounded-t-[225px] shadow-[0_10px_30px_rgba(0,0,0,1)] relative z-20">
+                   {/* Rim Highlight */}
+                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800/50"></div>
+                   {/* Inner glow/bulb */}
+                   <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 w-60 h-20 bg-yellow-50 rounded-full blur-[20px] opacity-80"></div>
+                </div>
+                {/* Light Cone / Spotlight Effect on Board */}
+                 <div className="absolute top-[320px] left-1/2 -translate-x-1/2 w-[2800px] h-[2800px] bg-[radial-gradient(circle,rgba(255,250,230,0.15)_0%,rgba(0,0,0,0)_60%)] pointer-events-none mix-blend-overlay blur-3xl z-10"></div>
+              </div>
+          )}
 
           {/* Project Title Header - Editable */}
           <div className="absolute top-[200px] left-0 w-full flex justify-center z-20 pointer-events-none">
@@ -739,18 +808,25 @@ const App: React.FC = () => {
               />
           </div>
 
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.4)_100%)] pointer-events-none z-0"></div>
+          {!graphicsQuality.includes('LOW') && (
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.4)_100%)] pointer-events-none z-0"></div>
+          )}
 
-          <div 
-            className="absolute inset-0 opacity-70 pointer-events-none" 
-            style={{ 
-              backgroundImage: theme.texture,
-              backgroundSize: theme.textureSize || 'auto',
-              mixBlendMode: 'multiply'
-            }}
-          />
+          {/* Texture Overlay - Low Quality simple color or no texture */}
+          {graphicsQuality !== 'LOW' && (
+             <div 
+                className="absolute inset-0 opacity-70 pointer-events-none" 
+                style={{ 
+                  backgroundImage: theme.texture,
+                  backgroundSize: theme.textureSize || 'auto',
+                  mixBlendMode: 'multiply'
+                }}
+              />
+          )}
 
-          <div className="absolute -inset-[1px] shadow-[inset_0_2px_15px_rgba(0,0,0,0.8),inset_0_-2px_15px_rgba(255,255,255,0.05)] pointer-events-none"></div>
+          {graphicsQuality !== 'LOW' && (
+              <div className="absolute -inset-[1px] shadow-[inset_0_2px_15px_rgba(0,0,0,0.8),inset_0_-2px_15px_rgba(255,255,255,0.05)] pointer-events-none"></div>
+          )}
 
           {/* Connection Lines Layer */}
           <div className={`transition-all duration-500 ${focusedItemId ? 'blur-sm opacity-30 grayscale pointer-events-none' : 'opacity-100'}`}>
@@ -758,6 +834,7 @@ const App: React.FC = () => {
               items={items} 
               activeConnection={activeConnection}
               onConnectionContextMenu={handleConnectionContextMenu}
+              quality={graphicsQuality}
             />
           </div>
 
@@ -781,11 +858,14 @@ const App: React.FC = () => {
               isBlurred={focusedItemId !== null && focusedItemId !== item.id}
               onAddRelated={addConnectedItem}
               onExitFocus={handleExitFocus}
+              quality={graphicsQuality}
             />
           ))}
 
           {/* Focus Dim Layer - Inside Board to be behind focused item (z-60) but above others */}
-          <div className={`absolute inset-0 z-40 bg-black/60 backdrop-blur-[2px] transition-opacity duration-500 pointer-events-none ${focusedItemId ? 'opacity-100' : 'opacity-0'}`} />
+          {graphicsQuality !== 'LOW' && (
+              <div className={`absolute inset-0 z-40 bg-black/60 backdrop-blur-[2px] transition-opacity duration-500 pointer-events-none ${focusedItemId ? 'opacity-100' : 'opacity-0'}`} />
+          )}
 
         </div>
       </RoomEnvironment>
@@ -793,7 +873,7 @@ const App: React.FC = () => {
       {/* Unified Context Menu */}
       {contextMenu && (
         <div 
-          className="fixed z-[100] bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl flex flex-col gap-1 min-w-[140px] no-print"
+          className="fixed z-[100] bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl flex flex-col gap-1 min-w-[160px] no-print"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -820,6 +900,19 @@ const App: React.FC = () => {
           ) : (
             <>
                <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider px-2 py-1">Item Options</div>
+               
+               {/* Drag Children Toggle */}
+               <button 
+                  onClick={() => toggleDragChildren(contextMenu.itemId)} 
+                  className={`flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-xs ${contextItem?.dragChildren ? 'text-blue-300 bg-blue-500/10' : 'text-zinc-200'}`}
+               >
+                 <Layers size={12} /> 
+                 <span>Drag Connected Ideas</span>
+                 {contextItem?.dragChildren && <Check size={12} className="ml-auto text-blue-400" />}
+               </button>
+
+               <div className="h-px bg-white/10 my-1" />
+               
                <button onClick={handleContextDelete} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors text-xs">
                  <Trash2 size={12} /> Delete Item
                </button>
@@ -827,6 +920,46 @@ const App: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Settings Button (Top Right) */}
+      <div className={`absolute top-4 right-4 z-[80] flex flex-col items-end pointer-events-auto no-print ${isUIVisible ? 'opacity-100' : 'opacity-0'}`}>
+         <button
+            onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); }}
+            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                showSettings ? 'bg-zinc-700 text-white' : 'bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+            }`}
+            title="Graphics Settings"
+         >
+            <SettingsIcon size={20} />
+         </button>
+
+         {/* Settings Panel */}
+         <div className={`absolute top-[calc(100%+8px)] right-0 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl p-3 shadow-2xl flex flex-col gap-2 min-w-[180px] transition-all duration-300 origin-top-right ${showSettings ? 'scale-100 opacity-100 visible' : 'scale-95 opacity-0 invisible'}`}>
+            <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider border-b border-white/5 pb-1 mb-1">Graphics Quality</div>
+            
+            <button 
+                onClick={() => setGraphicsQuality('HIGH')} 
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${graphicsQuality === 'HIGH' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'hover:bg-white/5 text-zinc-300'}`}
+            >
+                <span>High (Cinematic)</span>
+                {graphicsQuality === 'HIGH' && <Check size={12} />}
+            </button>
+            <button 
+                onClick={() => setGraphicsQuality('MEDIUM')} 
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${graphicsQuality === 'MEDIUM' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' : 'hover:bg-white/5 text-zinc-300'}`}
+            >
+                <span>Medium (Balanced)</span>
+                {graphicsQuality === 'MEDIUM' && <Check size={12} />}
+            </button>
+            <button 
+                onClick={() => setGraphicsQuality('LOW')} 
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${graphicsQuality === 'LOW' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30' : 'hover:bg-white/5 text-zinc-300'}`}
+            >
+                <span>Low (Performance)</span>
+                {graphicsQuality === 'LOW' && <Check size={12} />}
+            </button>
+         </div>
+      </div>
 
       {/* Persistent Toggle UI Button (Outside regular hide logic) */}
       <button 

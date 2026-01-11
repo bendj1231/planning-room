@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ComponentType, BoardItem as IBoardItem } from '../types';
+import { ComponentType, BoardItem as IBoardItem, GraphicsQuality } from '../types';
 import { Link2, Plus, Layout, Lightbulb, Sparkles } from 'lucide-react';
 import { ITEM_DIMENSIONS } from '../constants';
 
@@ -23,6 +23,7 @@ interface Props {
   isFocused?: boolean;
   isBlurred?: boolean;
   onAddRelated?: (sourceId: string, type: ComponentType) => void;
+  quality: GraphicsQuality;
 }
 
 export const BoardItem: React.FC<Props> = ({ 
@@ -42,10 +43,14 @@ export const BoardItem: React.FC<Props> = ({
   onExitFocus,
   isFocused,
   isBlurred,
-  onAddRelated
+  onAddRelated,
+  quality
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, itemX: 0, itemY: 0 });
+
+  const isLow = quality === 'LOW';
+  const isHigh = quality === 'HIGH';
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -128,8 +133,22 @@ export const BoardItem: React.FC<Props> = ({
   };
 
   const renderContent = () => {
-    const commonClasses = "transition-all duration-300 transform-gpu perspective-1000 group-hover:translate-z-12";
-    const contactShadow = "absolute inset-0 bg-black/40 blur-[4px] -z-10 translate-y-1 translate-x-1 scale-[0.98]";
+    // Quality-based classes
+    // On Low: Remove transform-gpu, perspective, translate-z
+    const commonClasses = isLow 
+        ? "transition-all duration-300" 
+        : "transition-all duration-300 transform-gpu perspective-1000 group-hover:translate-z-12";
+    
+    // On Low: Remove contact shadow
+    const contactShadow = isLow 
+        ? "hidden" 
+        : "absolute inset-0 bg-black/40 blur-[4px] -z-10 translate-y-1 translate-x-1 scale-[0.98]";
+    
+    // Simplifed shadow on Low
+    const objShadow = isLow ? "shadow-md border border-black/10" : "group-hover:shadow-[15px_25px_45px_rgba(0,0,0,0.55)] shadow-[inset_0_0_60px_rgba(0,0,0,0.15),4px_6px_18px_rgba(0,0,0,0.35)]";
+    const taskShadow = isLow ? "shadow-md border border-black/5" : "shadow-[8px_12px_25px_rgba(0,0,0,0.4)] hover:shadow-[12px_24px_50px_rgba(0,0,0,0.45)]";
+    const ideaShadow = isLow ? "shadow-sm border border-black/5" : "shadow-[2px_3px_10px_rgba(0,0,0,0.15)] hover:shadow-[4px_6px_20px_rgba(0,0,0,0.2)]";
+    const goalShadow = isLow ? "shadow-lg border border-slate-300" : "shadow-[10px_20px_40px_rgba(0,0,0,0.45)] group-hover:translate-z-20";
 
     switch (item.type) {
       case ComponentType.OBJECTIVE:
@@ -137,15 +156,14 @@ export const BoardItem: React.FC<Props> = ({
           <div className="relative group/objective">
             <div className={contactShadow}></div>
             <div 
-              className={`${commonClasses} w-52 h-36 p-5 flex flex-col items-center justify-center text-center relative rounded-sm group-hover:shadow-[15px_25px_45px_rgba(0,0,0,0.55)]`}
+              className={`${commonClasses} w-52 h-36 p-5 flex flex-col items-center justify-center text-center relative rounded-sm ${objShadow}`}
               style={{ 
                   backgroundColor: item.color || '#F3F4F6', 
-                  clipPath: 'polygon(0% 0%, 100% 0%, 100% 92%, 92% 100%, 0% 100%)',
-                  boxShadow: 'inset 0 0 60px rgba(0,0,0,0.15), 4px 6px 18px rgba(0,0,0,0.35)',
-                  transform: 'rotateX(2deg) rotateY(-2deg)'
+                  clipPath: isLow ? undefined : 'polygon(0% 0%, 100% 0%, 100% 92%, 92% 100%, 0% 100%)',
+                  transform: isLow ? undefined : 'rotateX(2deg) rotateY(-2deg)'
               }}
             >
-              <div className="absolute inset-0 opacity-15 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/natural-paper.png')]"></div>
+              {!isLow && <div className="absolute inset-0 opacity-15 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/natural-paper.png')]"></div>}
               <div className="absolute top-3 left-3 right-3 border-b border-black/10 text-[9px] uppercase font-bold tracking-widest text-black/50">Objective Paper</div>
               <textarea
                 value={item.text}
@@ -155,31 +173,36 @@ export const BoardItem: React.FC<Props> = ({
                 className={`bg-transparent border-none w-full h-full resize-none focus:outline-none font-marker text-slate-900 text-lg text-center mt-4 leading-tight placeholder:text-black/20 ${textAreaPointerEvents}`}
                 placeholder="Primary Goal..."
               />
-              <div className="absolute bottom-0 right-0 w-4 h-4 bg-black/20"></div>
+              {!isLow && <div className="absolute bottom-0 right-0 w-4 h-4 bg-black/20"></div>}
             </div>
           </div>
         );
       case ComponentType.TASK:
         return (
           <div className="relative group/task perspective-1000">
+            {/* Tack Pin - simplified on Low */}
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 w-8 h-8 pointer-events-none">
-                <div className="w-6 h-6 bg-gradient-to-tr from-red-800 via-red-500 to-red-300 rounded-full shadow-[0_4px_8px_rgba(0,0,0,0.6)] border-b-2 border-red-900 relative">
-                    <div className="absolute top-1 left-1.5 w-1.5 h-1.5 bg-white/60 rounded-full blur-[0.5px]"></div>
+                <div className={`w-6 h-6 bg-gradient-to-tr from-red-800 via-red-500 to-red-300 rounded-full ${isLow ? '' : 'shadow-[0_4px_8px_rgba(0,0,0,0.6)]'} border-b-2 border-red-900 relative`}>
+                    {!isLow && <div className="absolute top-1 left-1.5 w-1.5 h-1.5 bg-white/60 rounded-full blur-[0.5px]"></div>}
                 </div>
-                <div className="w-2 h-2 bg-black/80 mx-auto -mt-1 rounded-full blur-[1.5px] opacity-60"></div>
-                <div className="absolute top-6 left-6 w-3 h-3 bg-black/40 rounded-full blur-[4px]"></div>
+                {!isLow && <div className="w-2 h-2 bg-black/80 mx-auto -mt-1 rounded-full blur-[1.5px] opacity-60"></div>}
+                {isHigh && <div className="absolute top-6 left-6 w-3 h-3 bg-black/40 rounded-full blur-[4px]"></div>}
             </div>
             
             <div className={contactShadow}></div>
-            <div className={`${commonClasses} w-44 h-44 bg-[#fff9c4] p-5 shadow-[8px_12px_25px_rgba(0,0,0,0.4)] hover:shadow-[12px_24px_50px_rgba(0,0,0,0.45)] relative overflow-hidden`}
+            <div className={`${commonClasses} w-44 h-44 bg-[#fff9c4] p-5 relative overflow-hidden ${taskShadow}`}
                  style={{ 
-                    backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,0.05) 1px, transparent 1px), linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0.08) 100%)',
+                    backgroundImage: isLow ? undefined : 'linear-gradient(180deg, rgba(0,0,0,0.05) 1px, transparent 1px), linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0.08) 100%)',
                     backgroundSize: '100% 24px, 100% 100%',
-                    transform: 'rotateX(-2deg) rotateY(1deg)'
+                    transform: isLow ? undefined : 'rotateX(-2deg) rotateY(1deg)'
                  }}>
-              <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-black/5 to-transparent pointer-events-none"></div>
-              <div className="absolute bottom-0 right-0 w-10 h-10 bg-gradient-to-tl from-black/15 to-transparent"></div>
-              <div className="absolute bottom-[-3px] right-[-3px] w-6 h-6 bg-[#f0e68c] shadow-[-3px_-3px_6px_rgba(0,0,0,0.15)] rotate-45"></div>
+              {!isLow && (
+                  <>
+                    <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-black/5 to-transparent pointer-events-none"></div>
+                    <div className="absolute bottom-0 right-0 w-10 h-10 bg-gradient-to-tl from-black/15 to-transparent"></div>
+                    <div className="absolute bottom-[-3px] right-[-3px] w-6 h-6 bg-[#f0e68c] shadow-[-3px_-3px_6px_rgba(0,0,0,0.15)] rotate-45"></div>
+                  </>
+              )}
 
               <textarea
                 value={item.text}
@@ -196,12 +219,12 @@ export const BoardItem: React.FC<Props> = ({
         return (
           <div className="relative group/idea">
             <div className={contactShadow}></div>
-            <div className={`${commonClasses} w-60 h-16 bg-[#fafafa] shadow-[2px_3px_10px_rgba(0,0,0,0.15)] flex items-center justify-center px-4 relative hover:shadow-[4px_6px_20px_rgba(0,0,0,0.2)]`}
+            <div className={`${commonClasses} w-60 h-16 bg-[#fafafa] flex items-center justify-center px-4 relative ${ideaShadow}`}
                  style={{ 
-                    backgroundImage: 'linear-gradient(to bottom, #ffffff 0%, #f0f0f0 100%)',
-                    transform: 'rotateX(0deg) rotateY(0deg)' 
+                    backgroundImage: isLow ? undefined : 'linear-gradient(to bottom, #ffffff 0%, #f0f0f0 100%)',
+                    transform: isLow ? undefined : 'rotateX(0deg) rotateY(0deg)' 
                  }}>
-               <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-5 bg-white/30 shadow-[0_1px_1px_rgba(0,0,0,0.1)] border border-white/40 transform -rotate-1 skew-x-12 backdrop-blur-[2px]"></div>
+               {!isLow && <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-5 bg-white/30 shadow-[0_1px_1px_rgba(0,0,0,0.1)] border border-white/40 transform -rotate-1 skew-x-12 backdrop-blur-[2px]"></div>}
 
                <textarea
                 value={item.text}
@@ -218,21 +241,25 @@ export const BoardItem: React.FC<Props> = ({
         return (
           <div className="relative group/goal">
             <div className={contactShadow}></div>
-            <div className={`${commonClasses} w-56 h-40 bg-white p-5 shadow-[10px_20px_40px_rgba(0,0,0,0.45)] relative flex flex-col border border-slate-200 group-hover:translate-z-20`}
-                 style={{ transform: 'rotateX(1deg) rotateY(3deg)' }}>
-              <div className="absolute top-0 left-0 right-0 h-4 flex overflow-hidden">
-                  {Array.from({length: 20}).map((_, i) => (
-                      <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? 'bg-zinc-900' : 'bg-zinc-200'}`}></div>
-                  ))}
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 h-4 flex overflow-hidden">
-                  {Array.from({length: 20}).map((_, i) => (
-                      <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? 'bg-zinc-200' : 'bg-zinc-900'}`}></div>
-                  ))}
-              </div>
+            <div className={`${commonClasses} w-56 h-40 bg-white p-5 relative flex flex-col border border-slate-200 ${goalShadow}`}
+                 style={{ transform: isLow ? undefined : 'rotateX(1deg) rotateY(3deg)' }}>
+              {!isLow && (
+                  <>
+                    <div className="absolute top-0 left-0 right-0 h-4 flex overflow-hidden">
+                        {Array.from({length: 20}).map((_, i) => (
+                            <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? 'bg-zinc-900' : 'bg-zinc-200'}`}></div>
+                        ))}
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 h-4 flex overflow-hidden">
+                        {Array.from({length: 20}).map((_, i) => (
+                            <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? 'bg-zinc-200' : 'bg-zinc-900'}`}></div>
+                        ))}
+                    </div>
+                  </>
+              )}
               
               <div className="my-auto text-center px-2 py-4 border-2 border-dashed border-zinc-300 rounded relative overflow-hidden">
-                <div className="absolute inset-0 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05)] pointer-events-none"></div>
+                {!isLow && <div className="absolute inset-0 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05)] pointer-events-none"></div>}
                 <span className="text-[10px] text-zinc-400 font-bold block mb-1 tracking-[0.2em] uppercase">Phase Finish</span>
                 <textarea
                   value={item.text}
@@ -251,28 +278,42 @@ export const BoardItem: React.FC<Props> = ({
 
   const getRingClass = () => {
     if (!isConnecting) return '';
-    if (isConnectionStart) return 'ring-4 ring-amber-500 rounded-lg shadow-[0_0_20px_rgba(245,158,11,0.5)]'; // Distinct start style
-    return 'ring-4 ring-blue-500/50 rounded-lg hover:ring-blue-500 cursor-crosshair'; // Potential target style
+    if (isConnectionStart) return 'ring-4 ring-amber-500 rounded-lg shadow-[0_0_20px_rgba(245,158,11,0.5)]'; 
+    return 'ring-4 ring-blue-500/50 rounded-lg hover:ring-blue-500 cursor-crosshair'; 
   };
 
   // Focus Styles
   const getFocusStyle = () => {
     if (isFocused) {
+      if (isLow) {
+          return {
+             zIndex: 60,
+             transform: `scale(1.15)`
+          };
+      }
       return {
-        zIndex: 60, // Increased to sit above the z-40 dim layer
+        zIndex: 60, 
         transform: `translate3d(0, 0, 50px) scale(1.15) rotate(${item.rotation}deg)`,
         filter: 'drop-shadow(0 30px 60px rgba(0,0,0,0.9))'
       };
     }
     if (isBlurred) {
+      if (isLow) {
+          return {
+              filter: 'grayscale(100%) opacity(0.4)',
+              pointerEvents: 'none' as const,
+              transform: 'scale(0.95)'
+          };
+      }
       return {
         filter: 'blur(4px) grayscale(80%) opacity(0.4)',
         pointerEvents: 'none' as const,
         transform: `scale(0.95) rotate(${item.rotation}deg)`
       };
     }
+    // Normal state
     return {
-       transform: `rotate(${item.rotation}deg)`
+       transform: isLow ? undefined : `rotate(${item.rotation}deg)`
     };
   };
 
@@ -349,7 +390,6 @@ export const BoardItem: React.FC<Props> = ({
       onDoubleClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Prevent text selection highlight on double click
         if (window.getSelection) {
           window.getSelection()?.removeAllRanges();
         }
@@ -371,7 +411,7 @@ export const BoardItem: React.FC<Props> = ({
           </button>
       )}
 
-      {/* Connection Drag Handle (Only show if not in string mode AND not focused/blurred) */}
+      {/* Connection Drag Handle */}
       {!isStringMode && !isFocused && !isBlurred && (
         <div 
           onMouseDown={(e) => onStartConnect(item.id, e)}

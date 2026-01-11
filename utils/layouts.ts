@@ -196,7 +196,9 @@ export const layoutOrganized = (items: BoardItem[], w: number, h: number) => {
     const ideas = items.filter(i => i.type === ComponentType.IDEA);
     const assignments = getIdeaAssignments(items);
 
-    const typeOrder = [ComponentType.OBJECTIVE, ComponentType.GOAL, ComponentType.TASK];
+    // Sort order: Objective -> Task -> Goal
+    // This ensures that in a left-to-right grid flow, Goals appear at the end.
+    const typeOrder = [ComponentType.OBJECTIVE, ComponentType.TASK, ComponentType.GOAL];
     const sorted = [...mainItems].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type));
     
     // Dynamic Grid
@@ -244,74 +246,70 @@ export const layoutStructured = (items: BoardItem[], w: number, h: number) => {
     const ideas = items.filter(i => i.type === ComponentType.IDEA);
     const assignments = getIdeaAssignments(items);
 
-    const incomingCount: Record<string, number> = {};
-    mainItems.forEach(i => incomingCount[i.id] = 0);
-    mainItems.forEach(i => i.connections.forEach(c => {
-        if (mainItems.some(m => m.id === c.targetId)) {
-            incomingCount[c.targetId] = (incomingCount[c.targetId] || 0) + 1;
-        }
-    }));
+    // Calculate levels using Longest Path (to ensure dependencies flow correctly left-to-right)
+    const nodeLevels = new Map<string, number>();
+    mainItems.forEach(i => nodeLevels.set(i.id, 0));
 
-    const roots = mainItems.filter(i => incomingCount[i.id] === 0);
-    const rootIds = roots.length ? roots.map(r => r.id) : (mainItems.length ? [mainItems[0].id] : []);
-    
-    const levels: Record<number, string[]> = {};
-    const visited = new Set<string>();
-    const queue: {id: string, level: number}[] = rootIds.map(id => ({id, level: 0}));
-    
-    rootIds.forEach(id => visited.add(id));
-
-    while (queue.length > 0) {
-        const {id, level} = queue.shift()!;
-        if (!levels[level]) levels[level] = [];
-        levels[level].push(id);
-
-        const item = mainItems.find(i => i.id === id);
-        if (item) {
-            item.connections.forEach(c => {
-                const target = mainItems.find(m => m.id === c.targetId);
-                if (target && !visited.has(c.targetId)) {
-                    visited.add(c.targetId);
-                    queue.push({ id: c.targetId, level: level + 1 });
+    // Bellman-Ford-ish relaxation for longest path
+    // Max iterations = num items to prevent infinite loops on cycles
+    for (let i = 0; i < mainItems.length; i++) {
+        let changed = false;
+        mainItems.forEach(item => {
+            const currentLvl = nodeLevels.get(item.id) || 0;
+            item.connections.forEach(conn => {
+                const targetId = conn.targetId;
+                if (mainItems.some(m => m.id === targetId)) {
+                    const targetLvl = nodeLevels.get(targetId) || 0;
+                    if (targetLvl < currentLvl + 1) {
+                        nodeLevels.set(targetId, currentLvl + 1);
+                        changed = true;
+                    }
                 }
             });
-        }
+        });
+        if (!changed) break;
     }
-    
-    mainItems.forEach(i => {
-        if (!visited.has(i.id)) {
-            const level = Object.keys(levels).length;
-             if (!levels[level]) levels[level] = [];
-            levels[level].push(i.id);
-            visited.add(i.id);
-        }
+
+    // Group by level
+    const levels: Record<number, string[]> = {};
+    nodeLevels.forEach((lvl, id) => {
+        if (!levels[lvl]) levels[lvl] = [];
+        levels[lvl].push(id);
     });
 
-    // Start lower to avoid Title overlap
-    let currentY = 500;
-    
-    const gapX = 80;
-    const gapY = 150;
-    let placedMain = [...mainItems];
+    // Horizontal Layout Config
+    const centerY = h / 2;
+    const levelSpacing = 450; // Horizontal spacing
+    const itemGapY = 100; // Vertical spacing within level
+    const startX = 200;
 
-    Object.keys(levels).forEach(lvlKey => {
-        const lvl = parseInt(lvlKey);
+    let placedMain = [...mainItems];
+    const sortedLevels = Object.keys(levels).map(Number).sort((a, b) => a - b);
+
+    sortedLevels.forEach(lvl => {
         const ids = levels[lvl];
         
-        // Calculate widths for this level to center it
-        let levelMaxH = 0;
-        const itemWidths = ids.map(id => {
+        // Calculate total height of this column
+        let columnHeight = 0;
+        const itemDims = ids.map(id => {
             const item = items.find(i => i.id === id)!;
             const assignedIdeas = (assignments.get(item.id) || []).map(x => items.find(y => y.id === x)!);
             const cluster = getClusterSize(item, assignedIdeas);
-            levelMaxH = Math.max(levelMaxH, cluster.h);
-            return { id, w: cluster.w, h: cluster.h };
+            columnHeight += cluster.h;
+            return { id, h: cluster.h, w: cluster.w };
         });
+        columnHeight += (ids.length - 1) * itemGapY;
 
-        const totalRowWidth = itemWidths.reduce((sum, item) => sum + item.w, 0) + (ids.length - 1) * gapX;
-        let currentX = (w - totalRowWidth) / 2;
+        // Determine Y start for this column to be centered
+        let currentY = centerY - (columnHeight / 2);
         
-        itemWidths.forEach(({ id, w }) => {
+        // Ensure we don't go too high into title area (Title is approx y:150-450)
+        // Pushing it down if it overlaps top
+        if (currentY < 450) currentY = 450; 
+
+        const currentX = startX + (lvl * levelSpacing);
+
+        itemDims.forEach(({ id, h, w }) => {
             const idx = placedMain.findIndex(i => i.id === id);
             if (idx !== -1) {
                 placedMain[idx] = {
@@ -320,11 +318,9 @@ export const layoutStructured = (items: BoardItem[], w: number, h: number) => {
                     y: currentY,
                     rotation: (Math.random() - 0.5) * 4
                 };
-                currentX += w + gapX;
+                currentY += h + itemGapY;
             }
         });
-
-        currentY += levelMaxH + gapY;
     });
 
     return attachIdeasToParents([...placedMain, ...ideas]);
@@ -393,41 +389,55 @@ export const layoutCornered = (items: BoardItem[], w: number, h: number) => {
     // Initialize with Title Box
     const placedBoxes: { x: number, y: number, w: number, h: number }[] = [getTitleBox(w)];
 
-    if (mainItems.length === 0) return attachIdeasToParents(items);
+    const objectives = mainItems.filter(i => i.type === ComponentType.OBJECTIVE);
+    const goals = mainItems.filter(i => i.type === ComponentType.GOAL);
+    const remainder = mainItems.filter(i => i.type !== ComponentType.OBJECTIVE && i.type !== ComponentType.GOAL);
 
-    // Identify Hub
-    const connectionCount: Record<string, number> = {};
-    mainItems.forEach(i => {
-        i.connections.forEach(c => {
-             if (mainItems.some(m => m.id === c.targetId)) connectionCount[i.id] = (connectionCount[i.id] || 0) + 1;
+    const placedMain: BoardItem[] = [];
+
+    // 1. Place Objectives (Center Top)
+    // Center cluster around (w/2, h/2 - 200)
+    if (objectives.length > 0) {
+        const startY = (h / 2) - 300;
+        const gap = 250;
+        const totalW = objectives.length * gap;
+        let currentX = (w / 2) - (totalW / 2) + (gap/2) - 100; // rough centering adjustment
+
+        objectives.forEach(obj => {
+             placedMain.push(placeItemSmart(obj, currentX, startY, items, assignments, placedBoxes, w, h));
+             currentX += gap;
         });
-        mainItems.forEach(other => {
-            if (other.connections.some(c => c.targetId === i.id)) connectionCount[i.id] = (connectionCount[i.id] || 0) + 1;
+    }
+
+    // 2. Place Goals (Center Bottom)
+    // Center cluster around (w/2, h/2 + 200)
+    if (goals.length > 0) {
+        const startY = (h / 2) + 150;
+        const gap = 250;
+        const totalW = goals.length * gap;
+        let currentX = (w / 2) - (totalW / 2) + (gap/2) - 100;
+
+        goals.forEach(goal => {
+             placedMain.push(placeItemSmart(goal, currentX, startY, items, assignments, placedBoxes, w, h));
+             currentX += gap;
         });
-    });
+    }
 
-    const centerItem = mainItems.reduce((a, b) => (connectionCount[a.id] || 0) >= (connectionCount[b.id] || 0) ? a : b);
-    const centerX = w / 2 - 200;
-    const centerY = h / 2 - 200;
-
-    let placedMain = [placeItemSmart(centerItem, centerX, centerY, items, assignments, placedBoxes, w, h)];
-    
-    const others = mainItems.filter(i => i.id !== centerItem.id);
-    const quadrants = [
-            { x: 300, y: 300 }, // TL
-            { x: w - 700, y: 300 }, // TR
-            { x: w - 700, y: h - 600 }, // BR
-            { x: 300, y: h - 600 } // BL
+    // 3. Place Remainder (Corners/Borders)
+    const corners = [
+        { x: 100, y: 150 }, // TL (avoiding title box overlap at very top)
+        { x: w - 350, y: 150 }, // TR
+        { x: w - 350, y: h - 350 }, // BR
+        { x: 100, y: h - 350 } // BL
     ];
 
-    others.forEach((item, index) => {
-        const quadIdx = index % 4;
-        const quad = quadrants[quadIdx];
+    remainder.forEach((item, index) => {
+        const corner = corners[index % 4];
+        // Add a little jitter so they don't all start seeking from exact same pixel
+        const jitterX = (Math.random() - 0.5) * 100;
+        const jitterY = (Math.random() - 0.5) * 100;
         
-        const initX = quad.x + (Math.random() - 0.5) * 200;
-        const initY = quad.y + (Math.random() - 0.5) * 200;
-
-        placedMain.push(placeItemSmart(item, initX, initY, items, assignments, placedBoxes, w, h));
+        placedMain.push(placeItemSmart(item, corner.x + jitterX, corner.y + jitterY, items, assignments, placedBoxes, w, h));
     });
 
     return attachIdeasToParents([...placedMain, ...ideas]);
