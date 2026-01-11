@@ -5,7 +5,8 @@ import { BoardItem } from './components/BoardItem';
 import { ConnectionLines } from './components/ConnectionLines';
 import { BoardType, ComponentType, BoardItem as IBoardItem, Point, ConnectionType } from './types';
 import { BOARD_THEMES, INITIAL_ITEMS, ITEM_DIMENSIONS } from './constants';
-import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer, FilePlus, Eraser } from 'lucide-react';
+import { Plus, Layout, Palette, Sparkles, ZoomIn, ZoomOut, Maximize, Lightbulb, Link, Trash2, Download, Upload, Eye, EyeOff, Printer, FilePlus, Eraser, Grid, Shuffle, Network, Diamond, LayoutTemplate, Clipboard, X, Image as ImageIcon, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { layoutMessy, layoutOrganized, layoutStructured, layoutDiamond, layoutCornered } from './utils/layouts';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<IBoardItem[]>(INITIAL_ITEMS);
@@ -21,12 +22,26 @@ const App: React.FC = () => {
 
   // Focus Mode State
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
+  const preFocusView = useRef<{ x: number, y: number, scale: number } | null>(null);
+  const [isViewAnimating, setIsViewAnimating] = useState(false);
 
   // UI Visibility State
   const [showUI, setShowUI] = useState(true);
 
+  // Theme UI State
+  const [isDesignOpen, setIsDesignOpen] = useState(false);
+
+  // Reference Image State
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [showReference, setShowReference] = useState(false);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
+
   // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, sourceId: string, targetId: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | { type: 'CONNECTION', x: number, y: number, sourceId: string, targetId: string }
+    | { type: 'ITEM', x: number, y: number, itemId: string }
+    | null
+  >(null);
 
   // View State (Zoom & Pan)
   // Start zoomed out (0.6) to show more of the map initially
@@ -49,6 +64,21 @@ const App: React.FC = () => {
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
 
+  // Keyboard Delete Listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only delete if we have a focused item and NOT typing in a textarea/input
+      if ((e.key === 'Delete' || e.key === 'Backspace') && focusedItemId) {
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') return;
+        
+        handleDeleteItem(focusedItemId);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusedItemId]);
+
   // Sync active connection color with spool selection
   useEffect(() => {
     setActiveConnection(prev => prev ? { ...prev, type: activeStringType } : null);
@@ -58,7 +88,53 @@ const App: React.FC = () => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   }, []);
 
+  // --- Focus Mode Logic (Zoom In/Out) ---
+  
+  const handleEnterFocus = (id: string) => {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      // prevent double triggering if already focused
+      if (focusedItemId === id) return;
+
+      setIsViewAnimating(true);
+      
+      // Store current view if coming from normal view
+      if (!focusedItemId) {
+          preFocusView.current = view;
+      }
+
+      const dim = ITEM_DIMENSIONS[item.type] || { w: 200, h: 200 };
+      const itemCenterX = item.x + dim.w / 2;
+      const itemCenterY = item.y + dim.h / 2;
+      const boardCenterX = boardSize.width / 2;
+      const boardCenterY = boardSize.height / 2;
+
+      // Calculate target displacement to center the item
+      const targetX = -(itemCenterX - boardCenterX);
+      const targetY = -(itemCenterY - boardCenterY);
+      
+      setFocusedItemId(id);
+      setView({ x: targetX, y: targetY, scale: 1.3 }); // Zoom in to 1.3x
+
+      setTimeout(() => setIsViewAnimating(false), 700);
+  };
+
+  const handleExitFocus = () => {
+      setIsViewAnimating(true);
+      setFocusedItemId(null);
+      if (preFocusView.current) {
+          setView(preFocusView.current);
+      } else {
+          setView({ x: 0, y: 0, scale: 0.6 });
+      }
+      setTimeout(() => setIsViewAnimating(false), 700);
+  };
+
   const handleDeleteItem = useCallback((id: string) => {
+    if (focusedItemId === id) {
+        handleExitFocus();
+    }
     setItems(prev => prev
       .filter(item => item.id !== id)
       .map(item => ({
@@ -66,13 +142,40 @@ const App: React.FC = () => {
         connections: item.connections.filter(c => c.targetId !== id) // Remove dead connections
       }))
     );
-    if (focusedItemId === id) setFocusedItemId(null);
   }, [focusedItemId]);
+
+  // --- Layout Handlers ---
+  const applyLayout = (type: 'MESSY' | 'ORGANIZED' | 'STRUCTURED' | 'DIAMOND' | 'CORNERED') => {
+      if (items.length === 0) return;
+      
+      let newItems = [...items];
+      const { width, height } = boardSize;
+
+      switch(type) {
+          case 'MESSY':
+              newItems = layoutMessy(newItems, width, height);
+              break;
+          case 'ORGANIZED':
+              newItems = layoutOrganized(newItems, width, height);
+              break;
+          case 'STRUCTURED':
+              newItems = layoutStructured(newItems, width, height);
+              break;
+          case 'DIAMOND':
+              newItems = layoutDiamond(newItems, width, height);
+              break;
+          case 'CORNERED':
+              newItems = layoutCornered(newItems, width, height);
+              break;
+      }
+      setItems(newItems);
+  };
 
   const handleConnectionContextMenu = (e: React.MouseEvent, sourceId: string, targetId: string) => {
     e.preventDefault(); // Prevent native browser menu
     e.stopPropagation();
     setContextMenu({
+      type: 'CONNECTION',
       x: e.clientX,
       y: e.clientY,
       sourceId,
@@ -80,8 +183,19 @@ const App: React.FC = () => {
     });
   };
 
+  const handleItemContextMenu = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      type: 'ITEM',
+      x: e.clientX,
+      y: e.clientY,
+      itemId: id
+    });
+  };
+
   const handleChangeConnectionColor = (newType: ConnectionType | 'DELETE') => {
-    if (!contextMenu) return;
+    if (!contextMenu || contextMenu.type !== 'CONNECTION') return;
 
     if (newType === 'DELETE') {
       setItems(prev => prev.map(item => {
@@ -109,6 +223,29 @@ const App: React.FC = () => {
     setContextMenu(null);
   };
 
+  const handleContextDelete = () => {
+      if (!contextMenu) return;
+      if (contextMenu.type === 'ITEM') {
+          handleDeleteItem(contextMenu.itemId);
+      }
+      setContextMenu(null);
+  };
+
+  // --- Reference Image Handler ---
+  const handleReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setReferenceImage(event.target?.result as string);
+        setShowReference(true);
+      };
+      reader.readAsDataURL(file);
+    }
+    // clear input
+    e.target.value = '';
+  };
+
   // --- File Operations ---
 
   const handleNewBoard = () => {
@@ -121,12 +258,15 @@ const App: React.FC = () => {
     setActiveStringType(ConnectionType.DEFAULT);
     setIsStringMode(false);
     resetView();
+    setFocusedItemId(null);
+    setReferenceImage(null);
   };
 
   const handleClearBoard = () => {
     if (items.length === 0) return;
     if (window.confirm("Clear all items from the board? This cannot be undone.")) {
       setItems([]);
+      setFocusedItemId(null);
     }
   };
 
@@ -389,7 +529,12 @@ const App: React.FC = () => {
   // Handle Double Click - Focus Mode
   const handleItemDoubleClick = (id: string) => {
     if (!isStringMode) {
-      setFocusedItemId(prev => prev === id ? null : id);
+       // Toggle Focus
+       if (focusedItemId === id) {
+           handleExitFocus();
+       } else {
+           handleEnterFocus(id);
+       }
     }
   };
 
@@ -398,7 +543,9 @@ const App: React.FC = () => {
       setActiveConnection(null);
     }
     // Clear focus on background click
-    setFocusedItemId(null);
+    if (focusedItemId) {
+        handleExitFocus();
+    }
   };
 
   // --- Zoom & Pan Logic ---
@@ -554,7 +701,7 @@ const App: React.FC = () => {
           onMouseDown={startPan}
           onClick={handleBackgroundClick}
           onWheel={handleWheel}
-          className={`relative ${theme.bg} transition-shadow duration-700 ease-in-out shrink-0 rounded-2xl border-[16px] ${theme.border}`}
+          className={`relative ${theme.bg} transition-shadow duration-700 ease-in-out shrink-0 rounded-2xl border-[16px] ${theme.border} ${isViewAnimating ? 'transition-transform duration-700 cubic-bezier(0.25, 0.1, 0.25, 1)' : ''}`}
           style={{
             width: boardSize.width,
             height: boardSize.height,
@@ -629,10 +776,11 @@ const App: React.FC = () => {
               isStringMode={isStringMode}
               onItemClick={handleItemClick}
               onItemDoubleClick={handleItemDoubleClick}
-              
+              onContextMenu={handleItemContextMenu}
               isFocused={focusedItemId === item.id}
               isBlurred={focusedItemId !== null && focusedItemId !== item.id}
               onAddRelated={addConnectedItem}
+              onExitFocus={handleExitFocus}
             />
           ))}
 
@@ -642,31 +790,41 @@ const App: React.FC = () => {
         </div>
       </RoomEnvironment>
 
-      {/* Connection Context Menu */}
+      {/* Unified Context Menu */}
       {contextMenu && (
         <div 
           className="fixed z-[100] bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl flex flex-col gap-1 min-w-[140px] no-print"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* ... existing menu ... */}
-          <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider px-2 py-1">Change String</div>
-          <button onClick={() => handleChangeConnectionColor(ConnectionType.CRITICAL)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
-            <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm" /> Critical
-          </button>
-          <button onClick={() => handleChangeConnectionColor(ConnectionType.POSITIVE)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
-            <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm" /> Positive
-          </button>
-          <button onClick={() => handleChangeConnectionColor(ConnectionType.ALTERNATIVE)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
-            <div className="w-3 h-3 rounded-full bg-blue-500 shadow-sm" /> Alternative
-          </button>
-          <button onClick={() => handleChangeConnectionColor(ConnectionType.DEFAULT)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
-            <div className="w-3 h-3 rounded-full bg-zinc-400 shadow-sm" /> Default
-          </button>
-          <div className="h-px bg-white/10 my-1" />
-          <button onClick={() => handleChangeConnectionColor('DELETE')} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors text-xs">
-            <Trash2 size={12} /> Delete
-          </button>
+          {contextMenu.type === 'CONNECTION' ? (
+             <>
+               <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider px-2 py-1">Change String</div>
+               <button onClick={() => handleChangeConnectionColor(ConnectionType.CRITICAL)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
+                 <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm" /> Critical
+               </button>
+               <button onClick={() => handleChangeConnectionColor(ConnectionType.POSITIVE)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
+                 <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm" /> Positive
+               </button>
+               <button onClick={() => handleChangeConnectionColor(ConnectionType.ALTERNATIVE)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
+                 <div className="w-3 h-3 rounded-full bg-blue-500 shadow-sm" /> Alternative
+               </button>
+               <button onClick={() => handleChangeConnectionColor(ConnectionType.DEFAULT)} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-200 text-xs">
+                 <div className="w-3 h-3 rounded-full bg-zinc-400 shadow-sm" /> Default
+               </button>
+               <div className="h-px bg-white/10 my-1" />
+               <button onClick={() => handleChangeConnectionColor('DELETE')} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors text-xs">
+                 <Trash2 size={12} /> Delete Connection
+               </button>
+             </>
+          ) : (
+            <>
+               <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider px-2 py-1">Item Options</div>
+               <button onClick={handleContextDelete} className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors text-xs">
+                 <Trash2 size={12} /> Delete Item
+               </button>
+            </>
+          )}
         </div>
       )}
 
@@ -725,18 +883,53 @@ const App: React.FC = () => {
            </button>
         </div>
 
-        <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-col space-y-3 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
-          {Object.entries(BOARD_THEMES).map(([type, t]) => (
+        {/* Arrangement Layouts */}
+        <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-col space-y-2 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
+            <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center pb-1 border-b border-white/5">Arrangement</div>
+            <div className="grid grid-cols-5 gap-1 pt-1">
+                <button onClick={() => applyLayout('ORGANIZED')} className="p-1.5 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center group" title="Organized Grid">
+                    <Grid size={16} className="text-zinc-400 group-hover:text-blue-400" />
+                </button>
+                <button onClick={() => applyLayout('MESSY')} className="p-1.5 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center group" title="Messy / Shuffle">
+                    <Shuffle size={16} className="text-zinc-400 group-hover:text-orange-400" />
+                </button>
+                <button onClick={() => applyLayout('STRUCTURED')} className="p-1.5 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center group" title="Structured Hierarchy">
+                    <Network size={16} className="text-zinc-400 group-hover:text-emerald-400" />
+                </button>
+                <button onClick={() => applyLayout('DIAMOND')} className="p-1.5 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center group" title="Diamond Starburst">
+                    <Diamond size={16} className="text-zinc-400 group-hover:text-purple-400" />
+                </button>
+                <button onClick={() => applyLayout('CORNERED')} className="p-1.5 bg-white/5 hover:bg-white/15 rounded-lg text-white transition-all flex items-center justify-center group" title="The Cornering">
+                    <LayoutTemplate size={16} className="text-zinc-400 group-hover:text-red-400" />
+                </button>
+            </div>
+        </div>
+
+        {/* Planning Board Design (Collapsible) */}
+        <div className="bg-zinc-900/95 backdrop-blur-xl p-3 rounded-2xl flex flex-col space-y-2 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)] transition-all duration-300">
             <button 
-              key={type}
-              onClick={() => setBoardType(type as BoardType)}
-              className={`p-3 rounded-xl transition-all flex items-center space-x-3 group w-full text-left ${boardType === type ? 'bg-white/20 text-white shadow-inner' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}
-              title={t.label}
+                onClick={() => setIsDesignOpen(!isDesignOpen)}
+                className="w-full flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider text-center pb-1 border-b border-white/5 hover:text-white transition-colors"
             >
-              <Palette size={20} className="shrink-0" />
-              <span className="text-xs font-medium">{t.label}</span>
+                <span>Planning Board Design</span>
+                {isDesignOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
-          ))}
+            
+            <div className={`grid transition-all duration-300 ease-in-out ${isDesignOpen ? 'grid-rows-[1fr] opacity-100 pt-1' : 'grid-rows-[0fr] opacity-0 py-0'}`}>
+                <div className="overflow-hidden flex flex-col space-y-1">
+                    {Object.entries(BOARD_THEMES).map(([type, t]) => (
+                        <button 
+                        key={type}
+                        onClick={() => setBoardType(type as BoardType)}
+                        className={`p-2 rounded-lg transition-all flex items-center justify-between group w-full text-left ${boardType === type ? 'bg-white/20 text-white shadow-inner' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}
+                        title={t.label}
+                        >
+                            <span className="text-xs font-medium">{t.label}</span>
+                            {boardType === type && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.8)]" />}
+                        </button>
+                    ))}
+                </div>
+            </div>
         </div>
 
         {/* Project Files */}
@@ -774,6 +967,79 @@ const App: React.FC = () => {
               <span className="text-xs font-medium text-zinc-400 group-hover:text-white">Print / PDF</span>
            </button>
         </div>
+      </div>
+
+      {/* Reference Image Sidebar (Right Edge) */}
+      <div className={`absolute right-6 top-1/2 -translate-y-1/2 z-[60] flex flex-col items-end pointer-events-none no-print ${isUIVisible ? 'opacity-100' : 'opacity-0'}`}>
+         
+         {/* Container for Button + Panel to ensure stable positioning */}
+         <div className="pointer-events-auto relative flex flex-col items-end"> 
+             <button
+               onClick={() => {
+                 if (!referenceImage) referenceInputRef.current?.click();
+                 else setShowReference(!showReference);
+               }}
+               className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.5)] transition-all duration-300 ${
+                 showReference && referenceImage 
+                   ? 'bg-amber-500 text-black rotate-0' 
+                   : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+               }`}
+               title={referenceImage ? (showReference ? "Minimize" : "Show Reference") : "Upload Reference Image"}
+             >
+               {referenceImage ? <Clipboard size={22} /> : <ImageIcon size={22} />}
+             </button>
+             <input 
+                type="file" 
+                ref={referenceInputRef} 
+                onChange={handleReferenceUpload} 
+                className="hidden" 
+                accept="image/*" 
+             />
+
+             {/* The Reference Panel */}
+             <div className={`absolute right-[calc(100%+16px)] top-1/2 -translate-y-1/2 transition-all duration-500 ease-cubic-bezier(0.175, 0.885, 0.32, 1.275) origin-right ${
+                 showReference && referenceImage 
+                   ? 'translate-x-0 opacity-100 scale-100 visible' 
+                   : 'translate-x-20 opacity-0 scale-95 invisible'
+               }`}>
+                
+                 <div className="bg-zinc-900/95 backdrop-blur-md p-2 rounded-xl border border-white/10 shadow-2xl relative group w-[300px] md:w-[400px]">
+                     
+                     {/* Header */}
+                     <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                         <button 
+                           onClick={() => setShowReference(false)} 
+                           className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-zinc-600 backdrop-blur-sm"
+                           title="Minimize"
+                         >
+                           <ChevronRight size={14} />
+                         </button>
+                         <button 
+                           onClick={() => referenceInputRef.current?.click()} 
+                           className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-blue-600 backdrop-blur-sm"
+                           title="Replace Image"
+                         >
+                           <Upload size={14} />
+                         </button>
+                         <button 
+                           onClick={() => { setReferenceImage(null); setShowReference(false); }} 
+                           className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-red-600 backdrop-blur-sm"
+                           title="Remove Image"
+                         >
+                           <Trash2 size={14} />
+                         </button>
+                     </div>
+
+                     {/* Content */}
+                     <div className="overflow-y-auto max-h-[70vh] rounded-lg custom-scrollbar bg-black/20">
+                        <img src={referenceImage || ''} alt="Reference" className="w-full h-auto block" />
+                     </div>
+                     
+                     <div className="h-1.5 w-1/3 bg-white/10 mx-auto mt-2 rounded-full"></div>
+                 </div>
+             </div>
+         </div>
+
       </div>
 
       {/* Bottom Right: Zoom Controls */}

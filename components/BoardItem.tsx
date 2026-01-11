@@ -17,6 +17,8 @@ interface Props {
   isStringMode: boolean;
   onItemClick: (id: string) => void;
   onItemDoubleClick: (id: string) => void;
+  onContextMenu: (id: string, e: React.MouseEvent) => void;
+  onExitFocus?: () => void;
   
   isFocused?: boolean;
   isBlurred?: boolean;
@@ -36,6 +38,8 @@ export const BoardItem: React.FC<Props> = ({
   isStringMode,
   onItemClick,
   onItemDoubleClick,
+  onContextMenu,
+  onExitFocus,
   isFocused,
   isBlurred,
   onAddRelated
@@ -115,6 +119,14 @@ export const BoardItem: React.FC<Props> = ({
   // Disable pointer events on text area when NOT focused to allow dragging by clicking text
   const textAreaPointerEvents = (isStringMode || !isFocused) ? 'pointer-events-none' : 'pointer-events-auto';
 
+  // Handle Enter to exit focus (Shift+Enter for newline)
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      onExitFocus?.();
+    }
+  };
+
   const renderContent = () => {
     const commonClasses = "transition-all duration-300 transform-gpu perspective-1000 group-hover:translate-z-12";
     const contactShadow = "absolute inset-0 bg-black/40 blur-[4px] -z-10 translate-y-1 translate-x-1 scale-[0.98]";
@@ -138,6 +150,7 @@ export const BoardItem: React.FC<Props> = ({
               <textarea
                 value={item.text}
                 onChange={(e) => onUpdate(item.id, { text: e.target.value })}
+                onKeyDown={handleKeyDown}
                 onMouseDown={(e) => e.stopPropagation()} 
                 className={`bg-transparent border-none w-full h-full resize-none focus:outline-none font-marker text-slate-900 text-lg text-center mt-4 leading-tight placeholder:text-black/20 ${textAreaPointerEvents}`}
                 placeholder="Primary Goal..."
@@ -171,6 +184,7 @@ export const BoardItem: React.FC<Props> = ({
               <textarea
                 value={item.text}
                 onChange={(e) => onUpdate(item.id, { text: e.target.value })}
+                onKeyDown={handleKeyDown}
                 onMouseDown={(e) => e.stopPropagation()}
                 className={`bg-transparent border-none w-full h-full resize-none focus:outline-none font-handwriting text-slate-800 text-xl leading-[24px] pt-1 placeholder:text-slate-400 ${textAreaPointerEvents}`}
                 placeholder="Write task..."
@@ -192,6 +206,7 @@ export const BoardItem: React.FC<Props> = ({
                <textarea
                 value={item.text}
                 onChange={(e) => onUpdate(item.id, { text: e.target.value })}
+                onKeyDown={handleKeyDown}
                 onMouseDown={(e) => e.stopPropagation()}
                 className={`bg-transparent border-none w-full h-full resize-none focus:outline-none font-casual text-zinc-700 text-xl text-center py-4 leading-none placeholder:text-zinc-300 ${textAreaPointerEvents}`}
                 placeholder="Idea strip..."
@@ -222,6 +237,7 @@ export const BoardItem: React.FC<Props> = ({
                 <textarea
                   value={item.text}
                   onChange={(e) => onUpdate(item.id, { text: e.target.value })}
+                  onKeyDown={handleKeyDown}
                   onMouseDown={(e) => e.stopPropagation()}
                   className={`bg-transparent border-none w-full h-full resize-none focus:outline-none font-marker text-zinc-900 text-xl text-center uppercase tracking-tight placeholder:text-zinc-200 ${textAreaPointerEvents}`}
                   placeholder="Mission Goal..."
@@ -331,8 +347,17 @@ export const BoardItem: React.FC<Props> = ({
         onItemClick(item.id);
       }}
       onDoubleClick={(e) => {
+        e.preventDefault();
         e.stopPropagation();
+        // Prevent text selection highlight on double click
+        if (window.getSelection) {
+          window.getSelection()?.removeAllRanges();
+        }
         onItemDoubleClick(item.id);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(item.id, e);
       }}
     >
       {/* Delete button (hidden if blurred) */}
